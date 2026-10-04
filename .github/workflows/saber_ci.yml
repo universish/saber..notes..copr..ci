@@ -28,6 +28,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y curl jq tar
 
+      # 1. Host seviyesinde QEMU ve binfmt desteğini kurun
+      - name: QEMU ve ARM64 binfmt Desteğini Kur
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support curl jq tar
+
       - name: Sürüm ve Varlıkları Tespit Et
         id: fetch_release
         run: |
@@ -48,7 +54,6 @@ jobs:
           echo "Hedef Sürüm: $VERSION ($TAG)"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-          # Asset regex eşleştirmeleri (Büyük/küçük harf duyarsız)
           X86_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("(?i)saber-.*-x86_64\\.appimage$")) | .browser_download_url' | head -n 1)
           ARM_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("(?i)saber-.*-arm64\\.appimage$")) | .browser_download_url' | head -n 1)
 
@@ -65,6 +70,7 @@ jobs:
           echo "X86_URL=$X86_URL" >> $GITHUB_ENV
           echo "ARM_URL=$ARM_URL" >> $GITHUB_ENV
 
+      # 2. x86_64 AppImage Ayıklama (Doğal x86_64)
       - name: x86_64 AppImage Paketini İndir ve Çıkart
         run: |
           curl -sL -o saber-x86_64.AppImage "${{ env.X86_URL }}"
@@ -72,21 +78,23 @@ jobs:
           ./saber-x86_64.AppImage --appimage-extract
           mv squashfs-root squashfs-root-x86_64
 
-          # AppImage runtime kalıntılarını temizle
           rm -f squashfs-root-x86_64/AppRun
           rm -f squashfs-root-x86_64/.DirIcon
 
           mkdir -p rpmbuild/SOURCES
           tar -czf "rpmbuild/SOURCES/saber-${{ env.VERSION }}-x86_64.tar.gz" -C squashfs-root-x86_64 .
 
-      - name: arm64 AppImage Paketini İndir ve Çıkart (QEMU ile)
+      # 3. arm64 AppImage Ayıklama (QEMU Aracılığıyla)
+      - name: arm64 AppImage Paketini İndir ve Çıkart
         run: |
           curl -sL -o saber-arm64.AppImage "${{ env.ARM_URL }}"
           chmod +x saber-arm64.AppImage
-          ./saber-arm64.AppImage --appimage-extract
+
+          # binfmt devreye girdiği için doğrudan veya açıkça qemu ile çağrılabilir
+          qemu-aarch64-static ./saber-arm64.AppImage --appimage-extract
+
           mv squashfs-root squashfs-root-arm64
 
-          # AppImage runtime kalıntılarını temizle
           rm -f squashfs-root-arm64/AppRun
           rm -f squashfs-root-arm64/.DirIcon
 
