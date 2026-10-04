@@ -1,0 +1,32 @@
+# GUI uygulaması: Upstream bir man sayfası sağlamaz ve dokümantasyonsuz paketleme
+# bu COPR rewrap yapısı için kasıtlı bir tercihtir.
+addFilter("no-manual-page-for-binary")
+addFilter("no-documentation")
+
+# Önceden derlenmiş upstream ikilileri kasıtlı olarak unstripped (.symtab içeren)
+# halde gelir; spec dosyasındaki %global debug_package %{nil} açıklamasına bakınız.
+addFilter("unstripped-binary-or-object")
+
+# %description içerisinde geçen İngilizce terimler için sözlük filtresi
+addFilter("spelling-error .*rewraps")
+addFilter("spelling-error .*prebuilt")
+
+# /usr/bin/saber, %{_libdir}/saber/saber ikilisine bir sembolik bağdır.
+# rpmlint masaüstü Exec= satırında yalnızca doğrudan regular dosya aradığından bu filtre gereklidir.
+addFilter("desktopfile-without-binary")
+
+# Önceden derlenmiş Flutter engine ikilisi, doğrudan SSL_CTX_set_cipher_list çağrısı yapabilir.
+# Bu durum upstream ikilisinden kaynaklanır ve kaynak koddan derlenmeden değiştirilemez.
+addFilter("crypto-policy-non-compliance-openssl")
+
+# /usr/lib64/saber/lib altındaki Flutter eklenti kütüphaneleri özeldir ($ORIGIN ile yüklenir).
+# Sistem kütüphane yolunda olmadıklarından ve dahili çalıştırma izinlerine göre tasarlandıklarından
+# aşağıdaki uyarılar filtrelenir.
+addFilter("shared-library-not-executable")
+addFilter("no-soname")
+addFilter("invalid-soname")
+addFilter("missing-gnu-hash-section")
+addFilter("binary-or-shlib-defines-rpath")
+
+# x86_64 ve aarch64 statik veya harici kütüphane sembol bağlama uyarıları
+addFilter("statically-linked-binary")
