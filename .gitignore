@@ -1,2 +1,24 @@
 .git
 /.git
+# RPM Derleme Çıktıları ve Geçici Dizinler
+rpmbuild/
+squashfs-root/
+squashfs-root-*/
+
+# İkili ve Paket Arşivleri
+*.AppImage
+*.rpm
+*.tar.gz
+*.tar.xz
+*.deb
+
+# Geliştirme Ortamı ve IDE Yapılandırmaları
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Derleme ve Dağıtım Artıkları
+dist/
+target/
