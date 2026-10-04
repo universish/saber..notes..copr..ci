@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.saber-notes.saber</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Saber</name>
+  <summary>The notes app built for handwriting</summary>
+  <description>
+    <p>
+      Saber is a privacy-focused note-taking application designed for handwriting.
+      It features hardware acceleration, stylus pressure sensitivity, inverted colors
+      mode for dark themes, and Nextcloud/WebDAV synchronization.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.saber-notes.saber.desktop</launchable>
+  <url type="homepage">https://github.com/saber-notes/saber</url>
+  <url type="bugtracker">https://github.com/saber-notes/saber/issues</url>
+  <provides>
+    <binary>saber</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <categories>
+    <category>Office</category>
+    <category>Utility</category>
+  </categories>
+</component>
