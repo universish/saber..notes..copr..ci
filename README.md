@@ -142,21 +142,35 @@ Ensure the destination project exists on Fedora Copr:
 
 
 ### 2. GitHub Secrets Setup
+## Badges
 
-1. Obtain your API configuration token from [Fedora Copr API Tokens](https://copr.fedorainfracloud.org/api/).
-2. Copy the entire `[copr-cli]` configuration block:
-```ini
-[copr-cli]
-login = <COPR_LOGIN_HASH>
-username = universish
-token = <COPR_API_TOKEN>
-copr_url = https://copr.fedorainfracloud.org
+[![Copr build status](https://copr.fedorainfracloud.org/coprs/universish/saber..notes/package/saber/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/universish/saber..notes/package/saber/)
+[![Saber Fedora COPR CI](https://github.com/universish/saber..ci/actions/workflows/saber_ci.yml/badge.svg)](https://github.com/universish/saber..ci/actions/workflows/saber_ci.yml)
+[![Saber latest release](https://img.shields.io/github/v/release/saber-notes/saber)](https://github.com/saber-notes/saber/releases)
 
-```
+---
 
+## Packaging compliance
 
-3. In this GitHub repository, go to **Settings -> Secrets and variables -> Actions**.
-4. Create a new repository secret named **`COPR_CONFIG`** and paste the copied block as the value.
+This package is distributed via COPR only. It unpacks and rewraps the upstream prebuilt
+AppImage binaries (`Saber-X.Y.Z-x86_64.AppImage` and `Saber-X.Y.Z-arm64.AppImage`), so it is
+**not eligible for the official Fedora repositories**: the Fedora Packaging Guidelines
+require all binaries to be built from source within the Fedora build system, and this
+repository intentionally ships the upstream Flutter engine and application payloads as-is (see `specs/saber.spec`).
+
+Everything else adheres strictly to Fedora packaging standards:
+
+- `ExclusiveArch: x86_64 aarch64` — matches the tested upstream prebuilt AppImage artifacts.
+- `%build` section is present (empty — nothing to recompile) ensuring standard RPM macro build hooks run.
+- `%check` executes `desktop-file-validate` and `appstream-util validate-relax --nonet` against packaged artifacts during the build phase.
+- `rpmlint` validation is filtered via `rpmlintrc` with explicit rationales: all warnings/errors inherent to packaging prebuilt Flutter blobs (unstripped binaries, private dynamic libraries with $ORIGIN runpaths, lack of manual pages for GUI applications) are documented and scoped.
+- Standard path macros (`%{_bindir}`, `%{_libdir}`, `%{_datadir}`, `%{_metainfodir}`) are used throughout `%files`.
+- License provenance: the underlying Saber application is released under GPL-3.0-or-later (`License: GPL-3.0-or-later`).
+- `%global debug_package %{nil}` is specified with an explicit rationale: foreign prebuilt binaries cannot produce standard DWARF debuginfo. Disabling debuginfo avoids invalid debug package extraction. Furthermore, Fedora's automatic `%__os_install_post` hooks (`brp-strip`, `brp-strip-comment-note`, `brp-strip-lto`) are bypassed or normalized in the spec to guarantee the Flutter engine ELF binary and Dart AOT snapshots remain byte-identical to upstream releases.
+- The bundled Flutter libraries under `%{_libdir}/saber/lib` contain private SONAMEs (such as `libflutter_linux_gtk.so`). To prevent private symbols from leaking into system-wide RPM dependency registries, `%__provides_exclude_from` and `%__requires_exclude_from` isolate the internal library paths.
+- Symbolic linking: `/usr/bin/saber -> %{_libdir}/saber/saber` is declared directly in `%install`. RPM owns this symlink natively, eliminating the need for post-installation (`%post`) shell scriptlets.
+- Curated AppStream metadata: upstream ships no standalone AppStream catalog metadata file, so this repository provides `com.saber-notes.saber.metainfo.xml` mapping directly to the desktop entry and upstream issue tracker.
+- System dependencies: standard Flutter Linux dependencies (`gtk3`, `glib2`, `cairo`, `pango`, `libepoxy`, `hicolor-icon-theme`) are explicitly declared. Network access is completely disabled within the build environment.
 
 ---
 
