@@ -1,4 +1,4 @@
-# Saber Notes Copr Packaging CI (`saber..ci`)
+# Saber Notes Copr Packaging CI (`saber..notes..copr..ci`)
 
 Automated continuous integration pipeline to repackage upstream [Saber](https://github.com/saber-notes/saber) AppImage releases into native RPM packages for Fedora Linux, built and hosted on [Fedora Copr](https://copr.fedorainfracloud.org/coprs/universish/saber..notes/).
 
