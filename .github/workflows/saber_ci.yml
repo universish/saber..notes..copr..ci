@@ -2,13 +2,13 @@ name: Saber AppImage to Copr RPM
 
 on:
   schedule:
-    - cron: '0 4 * * *' # Her sabah 04:00'te yeni sürüm kontrolü
+    - cron: '0 4 * * *' # Her sabah otomatik kontrol
   workflow_dispatch:
     inputs:
-      force_version:
-        description: 'Manuel Sürüm (Örn: 1.36.1 - Boş bırakılırsa en güncel release çekilir)'
+      force_build:
+        description: 'Sürüm aynı olsa bile zorla derle (true/false)'
         required: false
-        default: ''
+        default: 'false'
 
 jobs:
   build-and-publish:
@@ -18,121 +18,94 @@ jobs:
       - name: Depoyu Klonla
         uses: actions/checkout@v4
 
-      - name: ARM64 Öykünmesi için QEMU Kur
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Ubuntu Yardımcı Araçlarını Kur
+      - name: Sürüm Kontrolü Yap (GitHub vs Copr)
+        id: check_version
         run: |
-          sudo apt-get update
-          sudo apt-get install -y curl jq tar
+          sudo apt-get update && sudo apt-get install -y curl jq
 
-      # 1. Host seviyesinde QEMU ve binfmt desteğini kurun
-      - name: QEMU ve ARM64 binfmt Desteğini Kur
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support curl jq tar
+          # 1. GitHub'daki en son Saber sürümünü al
+          GH_RELEASE=$(curl -sL https://api.github.com/repos/saber-notes/saber/releases/latest)
+          TAG=$(echo "$GH_RELEASE" | jq -r .tag_name)
+          UPSTREAM_VER=$(echo "$TAG" | sed 's/^[vV]//')
 
-      - name: Sürüm ve Varlıkları Tespit Et
-        id: fetch_release
-        run: |
-          if [ -n "${{ github.event.inputs.force_version }}" ]; then
-            TAG="v${{ github.event.inputs.force_version }}"
-            RELEASE_JSON=$(curl -sL https://api.github.com/repos/saber-notes/saber/releases/tags/$TAG)
-            if [ "$(echo "$RELEASE_JSON" | jq -r .message)" = "Not Found" ]; then
-              TAG="${{ github.event.inputs.force_version }}"
-              RELEASE_JSON=$(curl -sL https://api.github.com/repos/saber-notes/saber/releases/tags/$TAG)
-            fi
-            VERSION="${{ github.event.inputs.force_version }}"
+          # 2. Copr'da yayınlanmış en son Saber sürümünü al
+          COPR_DATA=$(curl -sL "https://copr.fedorainfracloud.org/api_3/package?ownername=universish&projectname=saber..notes&packagename=saber")
+          COPR_VER=$(echo "$COPR_DATA" | jq -r '.builds.latest.version // empty')
+
+          echo "Upstream Sürüm: $UPSTREAM_VER"
+          echo "Copr Sürüm     : $COPR_VER"
+
+          # Manuel zorlama yoksa ve sürümler eşitse iş akışını durdur
+          if [ "${{ github.event.inputs.force_build }}" != "true" ] && [ "$UPSTREAM_VER" = "$COPR_VER" ]; then
+            echo "Paket zaten güncel ($UPSTREAM_VER). Yeni derleme gerekmiyor."
+            echo "skip_build=true" >> $GITHUB_OUTPUT
           else
-            RELEASE_JSON=$(curl -sL https://api.github.com/repos/saber-notes/saber/releases/latest)
-            TAG=$(echo "$RELEASE_JSON" | jq -r .tag_name)
-            VERSION=$(echo "$TAG" | sed 's/^[vV]//')
+            echo "Yeni sürüm tespit edildi veya zorlandı. Derleme başlatılıyor..."
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+            echo "VERSION=$UPSTREAM_VER" >> $GITHUB_ENV
+            
+            X86_URL=$(echo "$GH_RELEASE" | jq -r '.assets[] | select(.name | test("(?i)saber-.*-x86_64\\.appimage$")) | .browser_download_url' | head -n 1)
+            ARM_URL=$(echo "$GH_RELEASE" | jq -r '.assets[] | select(.name | test("(?i)saber-.*-arm64\\.appimage$")) | .browser_download_url' | head -n 1)
+            echo "X86_URL=$X86_URL" >> $GITHUB_ENV
+            echo "ARM_URL=$ARM_URL" >> $GITHUB_ENV
           fi
 
-          echo "Hedef Sürüm: $VERSION ($TAG)"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      - name: QEMU ve ARM64 Desteğini Kur
+        if: steps.check_version.outputs.skip_build != 'true'
+        run: |
+          sudo apt-get install -y qemu-user-static binfmt-support tar
 
-          X86_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("(?i)saber-.*-x86_64\\.appimage$")) | .browser_download_url' | head -n 1)
-          ARM_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("(?i)saber-.*-arm64\\.appimage$")) | .browser_download_url' | head -n 1)
-
-          if [ -z "$X86_URL" ] || [ "$X86_URL" = "null" ]; then
-            echo "HATA: x86_64 AppImage bulunamadı!"
-            exit 1
-          fi
-
-          if [ -z "$ARM_URL" ] || [ "$ARM_URL" = "null" ]; then
-            echo "HATA: arm64 AppImage bulunamadı!"
-            exit 1
-          fi
-
-          echo "X86_URL=$X86_URL" >> $GITHUB_ENV
-          echo "ARM_URL=$ARM_URL" >> $GITHUB_ENV
-
-      # 2. x86_64 AppImage Ayıklama (Doğal x86_64)
-      - name: x86_64 AppImage Paketini İndir ve Çıkart
+      - name: x86_64 AppImage İndir ve Çıkart
+        if: steps.check_version.outputs.skip_build != 'true'
         run: |
           curl -sL -o saber-x86_64.AppImage "${{ env.X86_URL }}"
           chmod +x saber-x86_64.AppImage
           ./saber-x86_64.AppImage --appimage-extract
           mv squashfs-root squashfs-root-x86_64
-
-          rm -f squashfs-root-x86_64/AppRun
-          rm -f squashfs-root-x86_64/.DirIcon
-
+          rm -f squashfs-root-x86_64/AppRun squashfs-root-x86_64/.DirIcon
           mkdir -p rpmbuild/SOURCES
           tar -czf "rpmbuild/SOURCES/saber-${{ env.VERSION }}-x86_64.tar.gz" -C squashfs-root-x86_64 .
 
-      # 3. arm64 AppImage Ayıklama (QEMU Aracılığıyla)
-      - name: arm64 AppImage Paketini İndir ve Çıkart
+      - name: arm64 AppImage İndir ve Çıkart
+        if: steps.check_version.outputs.skip_build != 'true'
         run: |
           curl -sL -o saber-arm64.AppImage "${{ env.ARM_URL }}"
           chmod +x saber-arm64.AppImage
-
-          # binfmt devreye girdiği için doğrudan veya açıkça qemu ile çağrılabilir
           qemu-aarch64-static ./saber-arm64.AppImage --appimage-extract
-
           mv squashfs-root squashfs-root-arm64
-
-          rm -f squashfs-root-arm64/AppRun
-          rm -f squashfs-root-arm64/.DirIcon
-
+          rm -f squashfs-root-arm64/AppRun squashfs-root-arm64/.DirIcon
           tar -czf "rpmbuild/SOURCES/saber-${{ env.VERSION }}-aarch64.tar.gz" -C squashfs-root-arm64 .
 
       - name: SRPM Üret ve Copr'a Gönder
+        if: steps.check_version.outputs.skip_build != 'true'
         uses: addnab/docker-run-action@v3
         with:
           image: fedora:latest
           options: -v ${{ github.workspace }}:/workspace
           run: |
             dnf install -y rpm-build rpmdevtools copr-cli desktop-file-utils libappstream-glib
-
             cd /workspace
-            mkdir -p rpmbuild/SPECS rpmbuild/SRPMS
-            cp sources/com.saber-notes.saber.metainfo.xml rpmbuild/SOURCES/
+            mkdir -p rpmbuild/SPECS rpmbuild/SRPMS rpmbuild/SOURCES
+            cp sources/*.metainfo.xml rpmbuild/SOURCES/
             cp specs/saber.spec rpmbuild/SPECS/
 
-            # SRPM oluştur
             rpmbuild -bs \
               --define "_topdir /workspace/rpmbuild" \
               --define "_version ${{ env.VERSION }}" \
               /workspace/rpmbuild/SPECS/saber.spec
 
             SRPM_FILE=$(ls /workspace/rpmbuild/SRPMS/saber-${{ env.VERSION }}-*.src.rpm | head -n 1)
-            echo "Üretilen SRPM: $SRPM_FILE"
 
-            # Copr kimlik doğrulama ayarını yap
             mkdir -p ~/.config
             cat << 'EOF' > ~/.config/copr
             ${{ secrets.COPR_CONFIG }}
             EOF
             chmod 600 ~/.config/copr
 
-            # Fedora 44 ve Fedora Rawhide (x86_64 & aarch64) chroot'larına gönder
             copr-cli build --nowait \
               --chroot fedora-44-x86_64 \
               --chroot fedora-44-aarch64 \
               --chroot fedora-rawhide-x86_64 \
               --chroot fedora-rawhide-aarch64 \
               universish/saber..notes "$SRPM_FILE"
+              
