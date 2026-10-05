@@ -7,9 +7,9 @@
 %global __brp_strip_comment_note %{nil}
 %global __brp_strip_static_archive %{nil}
 
-# Flutter iç kütüphanelerinin sistem geneline sahte Provide/Require üretmesini engelle
+# Flutter dahili kütüphanelerinin sistem genelinde aranmasını ve Provide sızıntısını engelle
 %global __provides_exclude_from ^%{_libdir}/%{name}/lib/.*$
-%global __requires_exclude_from ^%{_libdir}/%{name}/lib/.*$
+%global __requires_exclude ^(lib.*_plugin\\.so|libflutter_linux_gtk\\.so)
 
 Name:           saber
 Version:        %{_version}
@@ -28,7 +28,7 @@ BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
 BuildRequires:  tar
 
-# Flutter Linux çalışma zamanı temel bağımlılıkları
+# Flutter Linux çalışma zamanı için sistem kütüphaneleri
 Requires:       gtk3
 Requires:       glib2
 Requires:       cairo
@@ -51,10 +51,10 @@ tar -xzf %{SOURCE1} -C .
 %endif
 
 %build
-# Yeniden derleme adımı yoktur; AppImage içindeki hazır ELF ikilileri kullanılır.
+# Yeniden derleme adımı yoktur; açılan ELF ikilileri doğrudan kullanılır.
 
 %install
-# Upstream Flutter eklentilerindeki geçici /home/runner runpath hatalarını yoksay
+# Upstream Flutter geçici /home/runner runpath uyarılarını yoksay
 export QA_RPATHS=0x0003
 
 rm -rf %{buildroot}
@@ -66,15 +66,8 @@ mkdir -p %{buildroot}%{_datadir}/applications
 mkdir -p %{buildroot}%{_metainfodir}
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor
 
-# İkili dosyayı (Saber / saber) tespit et ve kur
-BIN_SRC=""
-if [ -f "Saber" ]; then
-    BIN_SRC="Saber"
-elif [ -f "saber" ]; then
-    BIN_SRC="saber"
-else
-    BIN_SRC=$(find . -type f \( -name "Saber" -o -name "saber" \) | grep -v "\.desktop" | head -n 1)
-fi
+# 1. Ana ikili dosyayı tespit et
+BIN_SRC=$(find . -type f \( -name "saber" -o -name "Saber" \) ! -name "*.desktop" ! -name "*.spec" | head -n 1)
 
 if [ -n "$BIN_SRC" ]; then
     install -m 0755 "$BIN_SRC" %{buildroot}%{_libdir}/%{name}/saber
@@ -87,14 +80,19 @@ fi
 # /usr/bin/saber sembolik bağını oluştur
 ln -sf %{_libdir}/%{name}/saber %{buildroot}%{_bindir}/%{name}
 
-# Flutter varlıklarını (data ve lib) kopyala
-DATA_SRC=$(find . -type d -name "data" | head -n 1)
-[ -n "$DATA_SRC" ] && cp -a "$DATA_SRC" %{buildroot}%{_libdir}/%{name}/
+# 2. İkili dosyanın ait olduğu bundle klasörünü alıp asıl lib ve data dizinlerini kopyala
+BUNDLE_DIR=$(dirname "$BIN_SRC")
 
-LIB_SRC=$(find . -type d -name "lib" | head -n 1)
-[ -n "$LIB_SRC" ] && cp -a "$LIB_SRC" %{buildroot}%{_libdir}/%{name}/
+if [ -d "$BUNDLE_DIR/data" ]; then
+    cp -a "$BUNDLE_DIR/data" %{buildroot}%{_libdir}/%{name}/
+fi
 
-# Masaüstü giriş dosyasını bul ve yerleştir
+if [ -d "$BUNDLE_DIR/lib" ]; then
+    cp -a "$BUNDLE_DIR/lib" %{buildroot}%{_libdir}/%{name}/
+    chmod 0755 %{buildroot}%{_libdir}/%{name}/lib/*.so* 2>/dev/null || true
+fi
+
+# 3. Masaüstü giriş dosyasını yapılandır
 DESKTOP_SRC=$(find . -name "*.desktop" | head -n 1)
 if [ -n "$DESKTOP_SRC" ]; then
     install -m 0644 "$DESKTOP_SRC" %{buildroot}%{_datadir}/applications/com.saber-notes.saber.desktop
@@ -102,25 +100,19 @@ if [ -n "$DESKTOP_SRC" ]; then
     sed -i 's|^Icon=.*|Icon=com.saber-notes.saber|' %{buildroot}%{_datadir}/applications/com.saber-notes.saber.desktop
 fi
 
-# AppImage içindeki mevcut ikon ağacını kopyala
-if [ -d "usr/share/icons" ]; then
-    cp -a usr/share/icons/* %{buildroot}%{_datadir}/icons/
+# 4. İkonları yerleştir
+if [ -d "usr/share/icons/hicolor" ]; then
+    cp -a usr/share/icons/hicolor/* %{buildroot}%{_datadir}/icons/hicolor/
 fi
 
-# Olası SVG ve PNG ikonlarını bularak com.saber-notes.saber adıyla garantiye al
-ICON_SVG=$(find . -type f -name "*.svg" | head -n 1)
-if [ -n "$ICON_SVG" ]; then
-    mkdir -p %{buildroot}%{_datadir}/icons/hicolor/scalable/apps
-    install -m 0644 "$ICON_SVG" %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/com.saber-notes.saber.svg
-fi
+# Orijinal ikon adı farklıysa (ör. com.adilhanney.saber), com.saber-notes.saber adıyla kopyala
+find %{buildroot}%{_datadir}/icons/hicolor/ -type f -name "*saber*" | while read -r icon; do
+    dir=$(dirname "$icon")
+    ext="${icon##*.}"
+    cp -a "$icon" "$dir/com.saber-notes.saber.$ext" 2>/dev/null || true
+done
 
-ICON_PNG=$(find . -type f -name "*.png" | head -n 1)
-if [ -n "$ICON_PNG" ]; then
-    mkdir -p %{buildroot}%{_datadir}/icons/hicolor/512x512/apps
-    install -m 0644 "$ICON_PNG" %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/com.saber-notes.saber.png
-fi
-
-# AppStream Metainfo kurulumu
+# 5. AppStream Metainfo kurulumu
 install -m 0644 %{SOURCE2} %{buildroot}%{_metainfodir}/com.saber-notes.saber.metainfo.xml
 
 %check
@@ -135,5 +127,5 @@ appstream-util validate-relax --nonet %{buildroot}%{_metainfodir}/com.saber-note
 %{_datadir}/icons/hicolor/*/*/*
 
 %changelog
-* Sun Oct 04 2026 Saffet Yavuz - Universish Automation <universish@tutamail.com> - %{version}-1
+* Mon Oct 05 2026 Saffet Yavuz - Universish Automation <universish@tutamail.com> - %{version}-1
 - Otomatik AppImage repackage sürümü.
