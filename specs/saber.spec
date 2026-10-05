@@ -7,13 +7,13 @@
 %global __brp_strip_comment_note %{nil}
 %global __brp_strip_static_archive %{nil}
 
-# Flutter dahili kütüphanelerinin sistem genelinde aranmasını ve Provide sızıntısını engelle
+# Flutter dahili kütüphanelerinin ve bundled PDFium'un sistem genelinde aranmasını engelle
 %global __provides_exclude_from ^%{_libdir}/%{name}/lib/.*$
-%global __requires_exclude ^(lib.*_plugin\\.so|libflutter_linux_gtk\\.so)
+%global __requires_exclude ^(lib.*_plugin\\.so|libflutter_linux_gtk\\.so|libpdfium\\.so)
 
 Name:           saber
 Version:        %{_version}
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        El yazısı ve dijital not alma uygulaması
 License:        GPL-3.0-or-later
 URL:            https://github.com/saber-notes/saber
@@ -128,5 +128,5 @@ appstream-util validate-relax --nonet %{buildroot}%{_metainfodir}/com.saber-note
 %{_datadir}/icons/hicolor/*/*/*
 
 %changelog
-* Sun Oct 04 2026 Saffet Yavuz - Universish Automation <universish@tutamail.com> - %{version}-2
-- Başlatıcı sarmalayıcı (wrapper script) ile LD_LIBRARY_PATH tanımlandı.
+* Mon Oct 05 2026 Saffet Yavuz - Universish Automation <universish@tutamail.com> - %{version}-3
+- libpdfium sahte bagimliligi filtrelendi (jellyfin cakismasi giderildi).
