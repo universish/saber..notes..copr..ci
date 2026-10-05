@@ -13,7 +13,7 @@
 
 Name:           saber
 Version:        %{_version}
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        El yazısı ve dijital not alma uygulaması
 License:        GPL-3.0-or-later
 URL:            https://github.com/saber-notes/saber
@@ -54,33 +54,27 @@ tar -xzf %{SOURCE1} -C .
 # Yeniden derleme adımı yoktur; açılan ELF ikilileri doğrudan kullanılır.
 
 %install
-# Upstream Flutter geçici /home/runner runpath uyarılarını yoksay
 export QA_RPATHS=0x0003
 
 rm -rf %{buildroot}
 
-# Gerekli hedef dizinleri oluştur
 mkdir -p %{buildroot}%{_libdir}/%{name}
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_datadir}/applications
 mkdir -p %{buildroot}%{_metainfodir}
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor
 
-# 1. Ana ikili dosyayı tespit et
+# 1. Ana ikili dosyayı kur
 BIN_SRC=$(find . -type f \( -name "saber" -o -name "Saber" \) ! -name "*.desktop" ! -name "*.spec" | head -n 1)
 
 if [ -n "$BIN_SRC" ]; then
     install -m 0755 "$BIN_SRC" %{buildroot}%{_libdir}/%{name}/saber
-    ln -sf saber %{buildroot}%{_libdir}/%{name}/Saber
 else
     echo "HATA: Saber ikili dosyası bulunamadı!"
     exit 1
 fi
 
-# /usr/bin/saber sembolik bağını oluştur
-ln -sf %{_libdir}/%{name}/saber %{buildroot}%{_bindir}/%{name}
-
-# 2. İkili dosyanın ait olduğu bundle klasörünü alıp asıl lib ve data dizinlerini kopyala
+# 2. Asıl data ve lib dizinlerini kopyala
 BUNDLE_DIR=$(dirname "$BIN_SRC")
 
 if [ -d "$BUNDLE_DIR/data" ]; then
@@ -92,7 +86,15 @@ if [ -d "$BUNDLE_DIR/lib" ]; then
     chmod 0755 %{buildroot}%{_libdir}/%{name}/lib/*.so* 2>/dev/null || true
 fi
 
-# 3. Masaüstü giriş dosyasını yapılandır
+# 3. Kütüphane yolunu yükleyen başlatıcı betik (/usr/bin/saber)
+cat << 'EOF' > %{buildroot}%{_bindir}/%{name}
+#!/bin/sh
+export LD_LIBRARY_PATH="%{_libdir}/%{name}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec %{_libdir}/%{name}/saber "$@"
+EOF
+chmod 0755 %{buildroot}%{_bindir}/%{name}
+
+# 4. Masaüstü giriş dosyasını yapılandır
 DESKTOP_SRC=$(find . -name "*.desktop" | head -n 1)
 if [ -n "$DESKTOP_SRC" ]; then
     install -m 0644 "$DESKTOP_SRC" %{buildroot}%{_datadir}/applications/com.saber-notes.saber.desktop
@@ -100,19 +102,18 @@ if [ -n "$DESKTOP_SRC" ]; then
     sed -i 's|^Icon=.*|Icon=com.saber-notes.saber|' %{buildroot}%{_datadir}/applications/com.saber-notes.saber.desktop
 fi
 
-# 4. İkonları yerleştir
+# 5. İkonları yerleştir
 if [ -d "usr/share/icons/hicolor" ]; then
     cp -a usr/share/icons/hicolor/* %{buildroot}%{_datadir}/icons/hicolor/
 fi
 
-# Orijinal ikon adı farklıysa (ör. com.adilhanney.saber), com.saber-notes.saber adıyla kopyala
 find %{buildroot}%{_datadir}/icons/hicolor/ -type f -name "*saber*" | while read -r icon; do
     dir=$(dirname "$icon")
     ext="${icon##*.}"
     cp -a "$icon" "$dir/com.saber-notes.saber.$ext" 2>/dev/null || true
 done
 
-# 5. AppStream Metainfo kurulumu
+# 6. AppStream Metainfo kurulumu
 install -m 0644 %{SOURCE2} %{buildroot}%{_metainfodir}/com.saber-notes.saber.metainfo.xml
 
 %check
@@ -127,5 +128,5 @@ appstream-util validate-relax --nonet %{buildroot}%{_metainfodir}/com.saber-note
 %{_datadir}/icons/hicolor/*/*/*
 
 %changelog
-* Mon Oct 05 2026 Saffet Yavuz - Universish Automation <universish@tutamail.com> - %{version}-1
-- Otomatik AppImage repackage sürümü.
+* Sun Oct 04 2026 Saffet Yavuz - Universish Automation <universish@tutamail.com> - %{version}-2
+- Başlatıcı sarmalayıcı (wrapper script) ile LD_LIBRARY_PATH tanımlandı.
