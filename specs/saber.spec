@@ -16,6 +16,9 @@ Summary:        El yazısı ve dijital not alma uygulaması
 License:        GPL-3.0-or-later
 URL:            https://github.com/saber-notes/saber
 
+# Eğer dışarıdan _version tanımlanmadıysa varsayılan sürümü ata
+%{!?_version: %global _version 1.36.1}
+
 Source0:        saber-%{version}-x86_64.tar.gz
 Source1:        saber-%{version}-aarch64.tar.gz
 Source2:        com.saber-notes.saber.metainfo.xml
