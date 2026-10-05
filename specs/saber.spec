@@ -10,14 +10,13 @@
 %global __requires_exclude_from ^%{_libdir}/%{name}/lib/.*$
 
 Name:           saber
+# Eğer dışarıdan _version tanımlanmadıysa varsayılan sürümü ata
+%{!?_version: %global _version 1.36.1}
 Version:        %{_version}
 Release:        1%{?dist}
 Summary:        El yazısı ve dijital not alma uygulaması
 License:        GPL-3.0-or-later
 URL:            https://github.com/saber-notes/saber
-
-# Eğer dışarıdan _version tanımlanmadıysa varsayılan sürümü ata
-%{!?_version: %global _version 1.36.1}
 
 Source0:        saber-%{version}-x86_64.tar.gz
 Source1:        saber-%{version}-aarch64.tar.gz
