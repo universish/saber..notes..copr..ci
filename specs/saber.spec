@@ -54,6 +54,9 @@ tar -xzf %{SOURCE1} -C .
 # Yeniden derleme adımı yoktur; AppImage içindeki hazır ELF ikilileri kullanılır.
 
 %install
+# Upstream Flutter eklentilerindeki geçici /home/runner runpath hatalarını yoksay
+export QA_RPATHS=0x0003
+
 rm -rf %{buildroot}
 
 # Gerekli hedef dizinleri oluştur
@@ -61,22 +64,23 @@ mkdir -p %{buildroot}%{_libdir}/%{name}
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_datadir}/applications
 mkdir -p %{buildroot}%{_metainfodir}
+mkdir -p %{buildroot}%{_datadir}/icons/hicolor
 
-# İkili dosyayı (Saber / saber) tespit et ve /usr/lib64/saber/saber olarak kur
+# İkili dosyayı (Saber / saber) tespit et ve kur
 BIN_SRC=""
 if [ -f "Saber" ]; then
     BIN_SRC="Saber"
 elif [ -f "saber" ]; then
     BIN_SRC="saber"
 else
-    BIN_SRC=$(find . -maxdepth 3 -type f \( -name "Saber" -o -name "saber" \) | head -n 1)
+    BIN_SRC=$(find . -type f \( -name "Saber" -o -name "saber" \) | grep -v "\.desktop" | head -n 1)
 fi
 
 if [ -n "$BIN_SRC" ]; then
     install -m 0755 "$BIN_SRC" %{buildroot}%{_libdir}/%{name}/saber
     ln -sf saber %{buildroot}%{_libdir}/%{name}/Saber
 else
-    echo "HATA: Saber ikili dosyasi bulunamadi!"
+    echo "HATA: Saber ikili dosyası bulunamadı!"
     exit 1
 fi
 
@@ -84,37 +88,33 @@ fi
 ln -sf %{_libdir}/%{name}/saber %{buildroot}%{_bindir}/%{name}
 
 # Flutter varlıklarını (data ve lib) kopyala
-if [ -d "data" ]; then
-    cp -a data %{buildroot}%{_libdir}/%{name}/
-else
-    DATA_SRC=$(find . -maxdepth 3 -type d -name "data" | head -n 1)
-    [ -n "$DATA_SRC" ] && cp -a "$DATA_SRC" %{buildroot}%{_libdir}/%{name}/
-fi
+DATA_SRC=$(find . -type d -name "data" | head -n 1)
+[ -n "$DATA_SRC" ] && cp -a "$DATA_SRC" %{buildroot}%{_libdir}/%{name}/
 
-if [ -d "lib" ]; then
-    cp -a lib %{buildroot}%{_libdir}/%{name}/
-else
-    LIB_SRC=$(find . -maxdepth 3 -type d -name "lib" | head -n 1)
-    [ -n "$LIB_SRC" ] && cp -a "$LIB_SRC" %{buildroot}%{_libdir}/%{name}/
-fi
+LIB_SRC=$(find . -type d -name "lib" | head -n 1)
+[ -n "$LIB_SRC" ] && cp -a "$LIB_SRC" %{buildroot}%{_libdir}/%{name}/
 
 # Masaüstü giriş dosyasını bul ve yerleştir
-DESKTOP_SRC=$(find . -maxdepth 2 -name "*.desktop" | head -n 1)
+DESKTOP_SRC=$(find . -name "*.desktop" | head -n 1)
 if [ -n "$DESKTOP_SRC" ]; then
     install -m 0644 "$DESKTOP_SRC" %{buildroot}%{_datadir}/applications/com.saber-notes.saber.desktop
     sed -i 's|^Exec=.*|Exec=%{_bindir}/saber %U|' %{buildroot}%{_datadir}/applications/com.saber-notes.saber.desktop
     sed -i 's|^Icon=.*|Icon=com.saber-notes.saber|' %{buildroot}%{_datadir}/applications/com.saber-notes.saber.desktop
 fi
 
-# Varsa SVG ikonunu kur
-ICON_SVG=$(find . -maxdepth 3 -type f -name "*.svg" | head -n 1)
+# AppImage içindeki mevcut ikon ağacını kopyala
+if [ -d "usr/share/icons" ]; then
+    cp -a usr/share/icons/* %{buildroot}%{_datadir}/icons/
+fi
+
+# Olası SVG ve PNG ikonlarını bularak com.saber-notes.saber adıyla garantiye al
+ICON_SVG=$(find . -type f -name "*.svg" | head -n 1)
 if [ -n "$ICON_SVG" ]; then
     mkdir -p %{buildroot}%{_datadir}/icons/hicolor/scalable/apps
     install -m 0644 "$ICON_SVG" %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/com.saber-notes.saber.svg
 fi
 
-# Varsa PNG ikonunu kur
-ICON_PNG=$(find . -maxdepth 3 -type f -name "*.png" | head -n 1)
+ICON_PNG=$(find . -type f -name "*.png" | head -n 1)
 if [ -n "$ICON_PNG" ]; then
     mkdir -p %{buildroot}%{_datadir}/icons/hicolor/512x512/apps
     install -m 0644 "$ICON_PNG" %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/com.saber-notes.saber.png
@@ -132,7 +132,7 @@ appstream-util validate-relax --nonet %{buildroot}%{_metainfodir}/com.saber-note
 %{_libdir}/%{name}/
 %{_datadir}/applications/com.saber-notes.saber.desktop
 %{_metainfodir}/com.saber-notes.saber.metainfo.xml
-%{_datadir}/icons/hicolor/*/apps/*
+%{_datadir}/icons/hicolor/*/*/*
 
 %changelog
 * Sun Oct 04 2026 Saffet Yavuz - Universish Automation <universish@tutamail.com> - %{version}-1
