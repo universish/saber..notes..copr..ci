@@ -113,16 +113,25 @@ jobs:
           name: srpm-package
           path: workspace/SRPMS/
 
+      - name: Copr Konfigürasyonunu Hazırla
+        run: |
+          mkdir -p copr_config
+          cat << 'EOF' > copr_config/copr
+          ${{ secrets.COPR_CONFIG }}
+          EOF
+          chmod 600 copr_config/copr
+
       - name: Copr Dispatch ile Yayınla
         uses: addnab/docker-run-action@v3
         with:
           image: fedora:latest
-          options: -v ${{ github.workspace }}:/workspace -e COPR_SECRET="${{ secrets.COPR_CONFIG }}"
+          options: -v ${{ github.workspace }}:/workspace
           run: |
             dnf install -y copr-cli
             mkdir -p ~/.config
-            echo "$COPR_SECRET" > ~/.config/copr
+            cp /workspace/copr_config/copr ~/.config/copr
             chmod 600 ~/.config/copr
+            rm -f /workspace/copr_config/copr
             
             SRPM_FILE=$(ls /workspace/workspace/SRPMS/*.src.rpm | head -n 1)
             
