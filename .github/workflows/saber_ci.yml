@@ -90,6 +90,12 @@ jobs:
             cp sources/*.metainfo.xml rpmbuild/SOURCES/
             cp specs/saber.spec rpmbuild/SPECS/
 
+            # Spec dosyasındaki sürümü doğrudan yeni sürüm numarasıyla değiştir:
+            sed -i "s/^Version:.*/Version: ${{ needs.check-version.outputs.version }}/" rpmbuild/SPECS/saber.spec
+            
+            # Eğer spec dosyanızda _version makrosu kullanılıyorsa onu da güncelleyin:
+            sed -i "s/%{!?_version: %global _version .*}/%{!?_version: %global _version ${{ needs.check-version.outputs.version }}}/" rpmbuild/SPECS/saber.spec || true
+
             rpmbuild -bs \
               --define "_topdir /workspace/rpmbuild" \
               --define "_version ${{ needs.check-version.outputs.version }}" \
