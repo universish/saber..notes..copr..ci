@@ -2,7 +2,7 @@ name: Saber AppImage to Copr RPM
 
 on:
   schedule:
-    - cron: '0 4 * * *' # Her sabah otomatik kontrol
+    - cron: '0 4,9 * * *' # Perth, Avustralya (UTC+8) yerel saatiyle 12:00 (Öğle) ve 17:00 (Mesai bitimi)
   workflow_dispatch:
     inputs:
       force_build:
@@ -11,79 +11,80 @@ on:
         default: 'false'
 
 jobs:
-  build-and-publish:
+  check-version:
+    name: 1. Aşama - Sürüm Kontrolü
     runs-on: ubuntu-latest
-
+    outputs:
+      skip_build: ${{ steps.check.outputs.skip_build }}
+      version: ${{ steps.check.outputs.version }}
+      x86_url: ${{ steps.check.outputs.x86_url }}
+      arm_url: ${{ steps.check.outputs.arm_url }}
     steps:
-      - name: Depoyu Klonla
-        uses: actions/checkout@v4
-
       - name: Sürüm Kontrolü Yap (GitHub vs Copr)
-        id: check_version
+        id: check
         run: |
           sudo apt-get update && sudo apt-get install -y curl jq
-
-          # 1. GitHub'daki en son Saber sürümünü al
+          
+          # GitHub'daki en son Saber sürümünü al
           GH_RELEASE=$(curl -sL https://api.github.com/repos/saber-notes/saber/releases/latest)
           TAG=$(echo "$GH_RELEASE" | jq -r .tag_name)
           UPSTREAM_VER=$(echo "$TAG" | sed 's/^[vV]//')
 
-          # 2. Copr'da yayınlanmış en son Saber sürümünü al
+          # Copr'da yayınlanmış en son Saber sürümünü al
           COPR_DATA=$(curl -sL "https://copr.fedorainfracloud.org/api_3/package?ownername=universish&projectname=saber..notes&packagename=saber")
           COPR_VER=$(echo "$COPR_DATA" | jq -r '.builds.latest.version // empty')
 
-          echo "Upstream Sürüm: $UPSTREAM_VER"
-          echo "Copr Sürüm     : $COPR_VER"
-
-          # Manuel zorlama yoksa ve sürümler eşitse iş akışını durdur
+          # Sürüm aynıysa ve zorla derleme kapalıysa iş akışını iptal et
           if [ "${{ github.event.inputs.force_build }}" != "true" ] && [ "$UPSTREAM_VER" = "$COPR_VER" ]; then
-            echo "Paket zaten güncel ($UPSTREAM_VER). Yeni derleme gerekmiyor."
             echo "skip_build=true" >> $GITHUB_OUTPUT
           else
-            echo "Yeni sürüm tespit edildi veya zorlandı. Derleme başlatılıyor..."
             echo "skip_build=false" >> $GITHUB_OUTPUT
-            echo "VERSION=$UPSTREAM_VER" >> $GITHUB_ENV
+            echo "version=$UPSTREAM_VER" >> $GITHUB_OUTPUT
             
             X86_URL=$(echo "$GH_RELEASE" | jq -r '.assets[] | select(.name | test("(?i)saber-.*-x86_64\\.appimage$")) | .browser_download_url' | head -n 1)
             ARM_URL=$(echo "$GH_RELEASE" | jq -r '.assets[] | select(.name | test("(?i)saber-.*-arm64\\.appimage$")) | .browser_download_url' | head -n 1)
-            echo "X86_URL=$X86_URL" >> $GITHUB_ENV
-            echo "ARM_URL=$ARM_URL" >> $GITHUB_ENV
+            echo "x86_url=$X86_URL" >> $GITHUB_OUTPUT
+            echo "arm_url=$ARM_URL" >> $GITHUB_OUTPUT
           fi
 
+  repackage:
+    name: 2. Aşama - İndirme ve SRPM Üretimi
+    needs: check-version
+    if: needs.check-version.outputs.skip_build != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Depoyu Klonla
+        uses: actions/checkout@v4
+
       - name: QEMU ve ARM64 Desteğini Kur
-        if: steps.check_version.outputs.skip_build != 'true'
-        run: |
-          sudo apt-get install -y qemu-user-static binfmt-support tar
+        run: sudo apt-get install -y qemu-user-static binfmt-support tar
 
       - name: x86_64 AppImage İndir ve Çıkart
-        if: steps.check_version.outputs.skip_build != 'true'
         run: |
-          curl -sL -o saber-x86_64.AppImage "${{ env.X86_URL }}"
+          curl -sL -o saber-x86_64.AppImage "${{ needs.check-version.outputs.x86_url }}"
           chmod +x saber-x86_64.AppImage
           ./saber-x86_64.AppImage --appimage-extract
           mv squashfs-root squashfs-root-x86_64
           rm -f squashfs-root-x86_64/AppRun squashfs-root-x86_64/.DirIcon
           mkdir -p rpmbuild/SOURCES
-          tar -czf "rpmbuild/SOURCES/saber-${{ env.VERSION }}-x86_64.tar.gz" -C squashfs-root-x86_64 .
+          tar -czf "rpmbuild/SOURCES/saber-${{ needs.check-version.outputs.version }}-x86_64.tar.gz" -C squashfs-root-x86_64 .
 
       - name: arm64 AppImage İndir ve Çıkart
-        if: steps.check_version.outputs.skip_build != 'true'
         run: |
-          curl -sL -o saber-arm64.AppImage "${{ env.ARM_URL }}"
+          curl -sL -o saber-arm64.AppImage "${{ needs.check-version.outputs.arm_url }}"
           chmod +x saber-arm64.AppImage
           qemu-aarch64-static ./saber-arm64.AppImage --appimage-extract
           mv squashfs-root squashfs-root-arm64
           rm -f squashfs-root-arm64/AppRun squashfs-root-arm64/.DirIcon
-          tar -czf "rpmbuild/SOURCES/saber-${{ env.VERSION }}-aarch64.tar.gz" -C squashfs-root-arm64 .
+          tar -czf "rpmbuild/SOURCES/saber-${{ needs.check-version.outputs.version }}-aarch64.tar.gz" -C squashfs-root-arm64 .
 
-      - name: SRPM Üret ve Copr'a Gönder
-        if: steps.check_version.outputs.skip_build != 'true'
+      - name: SRPM Üret
         uses: addnab/docker-run-action@v3
         with:
           image: fedora:latest
           options: -v ${{ github.workspace }}:/workspace
           run: |
-            dnf install -y rpm-build rpmdevtools copr-cli desktop-file-utils libappstream-glib
+            dnf install -y rpm-build rpmdevtools
             cd /workspace
             mkdir -p rpmbuild/SPECS rpmbuild/SRPMS rpmbuild/SOURCES
             cp sources/*.metainfo.xml rpmbuild/SOURCES/
@@ -91,21 +92,43 @@ jobs:
 
             rpmbuild -bs \
               --define "_topdir /workspace/rpmbuild" \
-              --define "_version ${{ env.VERSION }}" \
+              --define "_version ${{ needs.check-version.outputs.version }}" \
               /workspace/rpmbuild/SPECS/saber.spec
 
-            SRPM_FILE=$(ls /workspace/rpmbuild/SRPMS/saber-${{ env.VERSION }}-*.src.rpm | head -n 1)
+      - name: SRPM Paketini Artifact Olarak Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: srpm-package
+          path: rpmbuild/SRPMS/*.src.rpm
 
+  publish:
+    name: 3. Aşama - Fedora Copr Deposu Yayınlama
+    needs: [check-version, repackage]
+    if: needs.check-version.outputs.skip_build != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SRPM Paketini İndir
+        uses: actions/download-artifact@v4
+        with:
+          name: srpm-package
+          path: workspace/SRPMS/
+
+      - name: Copr Dispatch ile Yayınla
+        uses: addnab/docker-run-action@v3
+        with:
+          image: fedora:latest
+          options: -v ${{ github.workspace }}:/workspace -e COPR_SECRET="${{ secrets.COPR_CONFIG }}"
+          run: |
+            dnf install -y copr-cli
             mkdir -p ~/.config
-            cat << 'EOF' > ~/.config/copr
-            ${{ secrets.COPR_CONFIG }}
-            EOF
+            echo "$COPR_SECRET" > ~/.config/copr
             chmod 600 ~/.config/copr
-
+            
+            SRPM_FILE=$(ls /workspace/workspace/SRPMS/*.src.rpm | head -n 1)
+            
             copr-cli build --nowait \
               --chroot fedora-44-x86_64 \
               --chroot fedora-44-aarch64 \
               --chroot fedora-rawhide-x86_64 \
               --chroot fedora-rawhide-aarch64 \
               universish/saber..notes "$SRPM_FILE"
-              
